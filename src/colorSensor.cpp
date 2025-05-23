@@ -1,7 +1,7 @@
 #include "colorSensor.h"
 
 // Global variables definition
-Adafruit_TCS34725 colorSensor;
+Adafruit_TCS34725 colorSensor = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_101MS, TCS34725_GAIN_16X);;
 uint16_t r, g, b, c;
 uint16_t ir = 0;
 int thresh_clear = 200;
@@ -9,27 +9,28 @@ int thresh_color = 13;
 uint8_t current_color = COLOR_UNKNOWN;
 
 void initColorSensor() {
-  colorSensor.init();
-  colorSensor.setIntegrationTime(TCS34725_INTEGRATIONTIME_101MS);
-  colorSensor.setGain(TCS34725_GAIN_16X);
-  pinMode(IR_SENSOR_PIN, INPUT);
-  
+  Wire.begin();
+
+  if (colorSensor.begin()) {
+    //Serial.println("Found sensor");
+  } else {
+    Serial.println("No TCS34725 found ... check your connections");
+    while (1); // halt!
+  }
+
+  pinMode(COM_PIN_0, OUTPUT);
+  pinMode(COM_PIN_1, OUTPUT);
+  pinMode(COM_PIN_2, OUTPUT);
+
+
   // Set up interrupt pin for black detection
   pinMode(INTERRUPT_PIN, OUTPUT);
   digitalWrite(INTERRUPT_PIN, LOW); // Active LOW interrupt
-  
-  // Initialize I2C slave
-  Wire.setSDA(4);  // Set SDA pin (check XIAO RP2040 pinout)
-  Wire.setSCL(5);  // Set SCL pin (check XIAO RP2040 pinout)
-  Wire.begin(I2C_SLAVE_ADDRESS);
-  Wire.onRequest(requestEvent);
+
+
+  Serial.println("Color Sensor Init over");
 }
 
-// Function that's called when the master requests data
-void requestEvent() {
-  // Send the current color value when requested
-  Wire.write(current_color);
-}
 
 bool bootButtonPressed() {
   // Get the current state of the GPIO connected to the BOOTSEL button
@@ -140,6 +141,105 @@ void calibrate() {
   delay(300);
 }
 
+void writeColorToPins() {
+  switch (current_color)
+  {
+  case COLOR_WHITE:
+  //0 000
+    digitalWrite(COM_PIN_0, LOW);
+    digitalWrite(COM_PIN_1, LOW);
+    digitalWrite(COM_PIN_2, LOW);
+    break;
+
+  case COLOR_BLUE:
+  //1 001
+    digitalWrite(COM_PIN_0, HIGH);
+    digitalWrite(COM_PIN_1, LOW);
+    digitalWrite(COM_PIN_2, LOW);
+    break;
+
+  case COLOR_SILVER:
+  //2 010
+    digitalWrite(COM_PIN_0, LOW);
+    digitalWrite(COM_PIN_1, HIGH);
+    digitalWrite(COM_PIN_2, LOW);
+    break;
+
+  case COLOR_BLACK:
+  //3 011
+    digitalWrite(COM_PIN_0, HIGH);
+    digitalWrite(COM_PIN_1, HIGH);
+    digitalWrite(COM_PIN_2, LOW);
+
+  //INTERRUPT
+    interrupt();
+    break;
+
+  case COLOR_RED:
+  //4 100
+    digitalWrite(COM_PIN_0, LOW);
+    digitalWrite(COM_PIN_1, LOW);
+    digitalWrite(COM_PIN_2, HIGH);
+    break;
+
+  case COLOR_GREEN:
+  //5 101
+    digitalWrite(COM_PIN_0, HIGH);
+    digitalWrite(COM_PIN_1, LOW);
+    digitalWrite(COM_PIN_2, HIGH);
+    break;
+  case COLOR_UNKNOWN:
+  //6 110
+    digitalWrite(COM_PIN_0, LOW);
+    digitalWrite(COM_PIN_1, HIGH);
+    digitalWrite(COM_PIN_2, HIGH);
+    break;
+  
+  default:
+  //? 000
+    digitalWrite(COM_PIN_0, LOW);
+    digitalWrite(COM_PIN_1, LOW);
+    digitalWrite(COM_PIN_2, LOW);
+    break;
+  }
+}
+
+void writeColorToSerial() {
+  switch (current_color)
+  {
+  case COLOR_WHITE:
+    Serial.printLn("WHITE");
+    break;
+
+  case COLOR_BLUE:
+    Serial.printLn("BLUE");
+    break;
+
+  case COLOR_SILVER:
+    Serial.printLn("SILVER");
+    break;
+
+  case COLOR_BLACK:
+    dSerial.printLn("BLACK");
+    break;
+
+  case COLOR_RED:
+    Serial.printLn("RED");
+    break;
+
+  case COLOR_GREEN:
+    Serial.printLn("GREEN");
+    break;
+  case COLOR_UNKNOWN:
+    Serial.printLn("UNKNOWN");
+    break;
+  
+  default:
+    Serial.printLn("WHITE");
+    break;
+  }
+}
+
 void getTileColor() {
   uint8_t previous_color = current_color;
   colorSensor.getRawData(&r, &g, &b, &c);
@@ -154,68 +254,41 @@ void getTileColor() {
     g = 0;
     b = 0;
   }
+  #ifdef RAW_COLOR_DEBUG
+    Serial.print("R: ");
+    Serial.print(r);
+    Serial.print(" G: ");
+    Serial.print(g);
+    Serial.print(" B: ");
+    Serial.print(b);
+    Serial.print(" C: ");
+    Serial.print(c);
+    Serial.print(" IR: ");
+    Serial.println(ir);
+  #endif
 
-  Serial.print("R: ");
-  Serial.print(r);
-  Serial.print(" G: ");
-  Serial.print(g);
-  Serial.print(" B: ");
-  Serial.print(b);
-  Serial.print(" C: ");
-  Serial.print(c);
-  Serial.print(" IR: ");
-  Serial.println(ir);
-
-  switch (c < (g_BLACK_HIGH_CLEAR + thresh_clear)) {
-    case true:
-      current_color = COLOR_BLACK;
-      interrupt();
-      Serial.println("Black");
-      break;
-    case false:
-      switch (c > (g_WHITE_LOW_CLEAR - thresh_clear) || c > (g_SILVER_LOW_CLEAR - thresh_clear)) {
-        case true:
-          switch (ir < 250) {
-            case true:
-              current_color = COLOR_SILVER;
-              Serial.println("Silver");
-              break;
-            case false:
-              current_color = COLOR_WHITE;
-              Serial.println("White");
-              break;
-          }
-          break;
-        case false:
-          switch ((r - g > thresh_color) && (r - b > thresh_color)) {
-            case true:
-              current_color = COLOR_RED;
-              Serial.println("Red");
-              break;
-            case false:
-              switch ((g - r > thresh_color) && (g - b > thresh_color)) {
-                case true:
-                  current_color = COLOR_GREEN;
-                  Serial.println("Green");
-                  break;
-                case false:
-                  switch ((b - r > thresh_color) && (b - g > thresh_color)) {
-                    case true:
-                      current_color = COLOR_BLUE;
-                      Serial.println("Blue");
-                      break;
-                    case false:
-                      current_color = COLOR_UNKNOWN;
-                      Serial.println("Unknown");
-                      break;
-                  }
-                  break;
-              }
-              break;
-          }
-          break;
-      }
-      break;
+  if(c < (g_BLACK_HIGH_CLEAR + thresh_clear)) {
+    current_color = COLOR_BLACK;
+  }
+  else if ((b - r > thresh_color) && (b - g > thresh_color)) {
+    current_color = COLOR_BLUE;
+  }
+  else if ((r - g > thresh_color) && (r - b > thresh_color)) {
+    current_color = COLOR_RED;
+  }
+  else if ((g - r > thresh_color) && (g - b > thresh_color)) {
+    current_color = COLOR_GREEN;
+  }
+  else if (ir < 250 || c > (g_SILVER_LOW_CLEAR - thresh_clear)) {
+    current_color = COLOR_SILVER;
+  }
+  else if (c > (g_WHITE_LOW_CLEAR - thresh_clear)) {
+    current_color = COLOR_WHITE;
+  }
+  else {
+    current_color = COLOR_UNKNOWN;
   }
 
+  writeColorToPins();
+  writeColorToSerial();
 }

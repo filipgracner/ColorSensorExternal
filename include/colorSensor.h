@@ -11,11 +11,18 @@
 #include "hardware/structs/ioqspi.h"
 #include "hardware/structs/sio.h"
 
+//Debug Definitions
+#define RAW_COLOR_DEBUG
+#define COLOR_DEBUG
+
 // Pin definitions
-#define IR_SENSOR_PIN 7
-#define BOOTSEL_PIN 21
-#define I2C_SLAVE_ADDRESS 0x42
-#define INTERRUPT_PIN 6
+#define IR_SENSOR_PIN A0
+
+#define INTERRUPT_PIN D1
+
+#define COM_PIN_0 D8
+#define COM_PIN_1 D9
+#define COM_PIN_2 D10
 
 // Calibration values
 #define g_CALIBRATION_SAMPLES 3
@@ -27,14 +34,23 @@
 #define g_SILVER_LOW_CLEAR 7398
 #define g_SILVER_HIGH_CLEAR 7439
 
-// Color codes
-#define COLOR_UNKNOWN 0
-#define COLOR_RED     1
-#define COLOR_GREEN   2
-#define COLOR_BLUE    3
-#define COLOR_BLACK   4
-#define COLOR_WHITE   5
-#define COLOR_SILVER  6
+/*
+typedef enum {
+    WHITE_TILE_COLOR = 0,
+    BLUE_TILE_COLOR = 1,
+    SILVER_TILE_COLOR = 2,
+    BLACK_TILE_COLOR = 3
+    
+} Color_t;
+*/
+
+#define COLOR_UNKNOWN 6
+#define COLOR_RED     4
+#define COLOR_GREEN   5
+#define COLOR_BLUE    1
+#define COLOR_BLACK   3
+#define COLOR_WHITE   0
+#define COLOR_SILVER  2
 
 // Function declarations
 void initColorSensor();
@@ -43,6 +59,8 @@ void waitForButtonPress();
 void interrupt();
 uint32_t calibrateClear();
 void calibrate();
+void writeColorToPins();
+void writeColorToSerial();
 void getTileColor();
 void requestEvent();
 
