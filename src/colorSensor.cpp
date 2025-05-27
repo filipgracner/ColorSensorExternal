@@ -1,4 +1,11 @@
 #include "colorSensor.h"
+#include <Adafruit_NeoPixel.h>
+
+int Power = 11;
+int PIN  = 12;
+#define NUMPIXELS 1
+
+Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 
 // Global variables definition
 Adafruit_TCS34725 colorSensor = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_101MS, TCS34725_GAIN_16X);;
@@ -9,6 +16,13 @@ int thresh_color = 13;
 uint8_t current_color = COLOR_UNKNOWN;
 
 void initColorSensor() {
+
+  pixels.begin();
+  pinMode(Power,OUTPUT);
+  digitalWrite(Power, HIGH);
+  pixels.setPixelColor(0, pixels.Color(100, 100, 100));
+  pixels.show();
+
   Wire.begin();
 
   if (colorSensor.begin()) {
@@ -32,32 +46,39 @@ void initColorSensor() {
 }
 
 
-bool bootButtonPressed() {
-  // Get the current state of the GPIO connected to the BOOTSEL button
-  const uint CS_PIN_INDEX = 1; // CS pin is the second QPI pin
-  
-  // Disable interrupts
-  uint32_t save = save_and_disable_interrupts();
-  
-  // Set CS as GPIO
-  hw_write_masked(&ioqspi_hw->io[CS_PIN_INDEX].ctrl,
-                 GPIO_OVERRIDE_LOW << IO_QSPI_GPIO_QSPI_SS_CTRL_OEOVER_LSB,
-                 IO_QSPI_GPIO_QSPI_SS_CTRL_OEOVER_BITS);
-  
-  // Enable input
-  hw_set_bits(&ioqspi_hw->io[CS_PIN_INDEX].ctrl, 
-              GPIO_OVERRIDE_HIGH << IO_QSPI_GPIO_QSPI_SS_CTRL_INOVER_LSB);
-  
-  // Wait for input to settle
-  for (volatile int i = 0; i < 10; i++);
-  
-  // Read current state (active low, so invert result)
-  bool button_state = !(sio_hw->gpio_hi_in & (1u << CS_PIN_INDEX));
-  
-  // Restore interrupts
-  restore_interrupts(save);
-  
-  return button_state;
+bool __no_inline_not_in_flash_func(bootButtonPressed)() {
+    const uint CS_PIN_INDEX = 1;
+
+    // Must disable interrupts, as interrupt handlers may be in flash, and we
+    // are about to temporarily disable flash access!
+    uint32_t flags = save_and_disable_interrupts();
+
+    // Set chip select to Hi-Z
+    hw_write_masked(&ioqspi_hw->io[CS_PIN_INDEX].ctrl,
+                    GPIO_OVERRIDE_LOW << IO_QSPI_GPIO_QSPI_SS_CTRL_OEOVER_LSB,
+                    IO_QSPI_GPIO_QSPI_SS_CTRL_OEOVER_BITS);
+
+    // Note we can't call into any sleep functions in flash right now
+    for (volatile int i = 0; i < 1000; ++i);
+
+    // The HI GPIO registers in SIO can observe and control the 6 QSPI pins.
+    // Note the button pulls the pin *low* when pressed.
+#if PICO_RP2040
+    #define CS_BIT (1u << 1)
+#else
+    #define CS_BIT SIO_GPIO_HI_IN_QSPI_CSN_BITS
+#endif
+    bool button_state = !(sio_hw->gpio_hi_in & CS_BIT);
+
+    // Need to restore the state of chip select, else we are going to have a
+    // bad time when we return to code in flash!
+    hw_write_masked(&ioqspi_hw->io[CS_PIN_INDEX].ctrl,
+                    GPIO_OVERRIDE_NORMAL << IO_QSPI_GPIO_QSPI_SS_CTRL_OEOVER_LSB,
+                    IO_QSPI_GPIO_QSPI_SS_CTRL_OEOVER_BITS);
+
+    restore_interrupts(flags);
+
+    return button_state;
 }
 
 // Function to wait for button press
@@ -82,13 +103,6 @@ void waitForButtonPress() {
   Serial.println("Button pressed! Continuing...");
 }
 
-void interrupt() {
-  digitalWrite(INTERRUPT_PIN, HIGH); // Trigger interrupt when black
-  // Small delay then reset interrupt
-  delay(5);
-  digitalWrite(INTERRUPT_PIN, LOW);
-}
-
 uint32_t calibrateClear() {
   uint16_t c;
   uint16_t c_low = 65535;
@@ -111,34 +125,51 @@ uint32_t calibrateClear() {
   return ((uint32_t)c_high << 16) | c_low;
 }
 
+uint16_t g_BLACK_LOW_CLEAR = 1127;
+uint16_t g_BLACK_HIGH_CLEAR = 1136;
+uint16_t g_WHITE_LOW_CLEAR = 8929;
+uint16_t g_WHITE_HIGH_CLEAR = 9351;
+uint16_t g_SILVER_LOW_CLEAR = 7398;
+uint16_t g_SILVER_HIGH_CLEAR = 7439;
+
 void calibrate() {
-  uint16_t calibrated_low_clear;
-  uint16_t calibrated_high_clear;
   uint32_t calibrated_clear;
 
   Serial.println("Put the robot on the BLACK tile!\n\r");
+  pixels.setPixelColor(0, pixels.Color(255, 255, 0));    //YELLOW
+  pixels.show();
   waitForButtonPress();
   calibrated_clear = calibrateClear();
-  calibrated_low_clear = (uint16_t)(calibrated_clear & 0xFFFF); // Extract low clear value
-  calibrated_high_clear = (uint16_t)((calibrated_clear >> 16) & 0xFFFF); // Extract clear_high
-  Serial.printf("Low: %d, High: %d\n\r", calibrated_low_clear, calibrated_high_clear);
-  delay(300);
+  pixels.setPixelColor(0, pixels.Color(0, 0, 0));         //OFF
+  pixels.show();
+  g_BLACK_LOW_CLEAR = (uint16_t)(calibrated_clear & 0xFFFF); // Extract low clear value
+  g_BLACK_HIGH_CLEAR = (uint16_t)((calibrated_clear >> 16) & 0xFFFF); // Extract clear_high
+  Serial.printf("Low: %d, High: %d\n\r", g_BLACK_LOW_CLEAR, g_BLACK_HIGH_CLEAR);
+
 
   Serial.println("Put the robot on the WHITE tile!\n\r");
+  pixels.setPixelColor(0, pixels.Color(255, 255, 255)); //WHITE
+  pixels.show();
   waitForButtonPress();
   calibrated_clear = calibrateClear();
-  calibrated_low_clear = (uint16_t)(calibrated_clear & 0xFFFF); // Extract low clear value
-  calibrated_high_clear = (uint16_t)((calibrated_clear >> 16) & 0xFFFF); // Extract clear_high
-  Serial.printf("Low: %d, High: %d\n\r", calibrated_low_clear, calibrated_high_clear);
-  delay(300);
+  pixels.setPixelColor(0, pixels.Color(0, 0, 0));         //OFF
+  pixels.show();
+  g_WHITE_LOW_CLEAR = (uint16_t)(calibrated_clear & 0xFFFF); // Extract low clear value
+  g_WHITE_HIGH_CLEAR = (uint16_t)((calibrated_clear >> 16) & 0xFFFF); // Extract clear_high
+  Serial.printf("Low: %d, High: %d\n\r", g_WHITE_LOW_CLEAR, g_WHITE_HIGH_CLEAR);
+
 
   Serial.println("Put the robot on the SILVER tile!\n\r");
+  pixels.setPixelColor(0, pixels.Color(255, 0, 255));     //VIOLET
+  pixels.show();
   waitForButtonPress();
   calibrated_clear = calibrateClear();
-  calibrated_low_clear = (uint16_t)(calibrated_clear & 0xFFFF); // Extract low clear value
-  calibrated_high_clear = (uint16_t)((calibrated_clear >> 16) & 0xFFFF); // Extract clear_high
-  Serial.printf("Low: %d, High: %d\n\r", calibrated_low_clear, calibrated_high_clear);
-  delay(300);
+  pixels.setPixelColor(0, pixels.Color(0, 0, 0));         //OFF
+  pixels.show();
+  g_SILVER_LOW_CLEAR = (uint16_t)(calibrated_clear & 0xFFFF); // Extract low clear value
+  g_SILVER_HIGH_CLEAR = (uint16_t)((calibrated_clear >> 16) & 0xFFFF); // Extract clear_high
+  Serial.printf("Low: %d, High: %d\n\r", g_SILVER_LOW_CLEAR, g_SILVER_HIGH_CLEAR);
+
 }
 
 void writeColorToPins() {
@@ -149,6 +180,11 @@ void writeColorToPins() {
     digitalWrite(COM_PIN_0, LOW);
     digitalWrite(COM_PIN_1, LOW);
     digitalWrite(COM_PIN_2, LOW);
+
+    digitalWrite(INTERRUPT_PIN, LOW); 
+
+    pixels.setPixelColor(0, pixels.Color(255, 255, 255)); //WHITE
+    pixels.show();
     break;
 
   case COLOR_BLUE:
@@ -156,6 +192,11 @@ void writeColorToPins() {
     digitalWrite(COM_PIN_0, HIGH);
     digitalWrite(COM_PIN_1, LOW);
     digitalWrite(COM_PIN_2, LOW);
+
+    digitalWrite(INTERRUPT_PIN, LOW); 
+
+    pixels.setPixelColor(0, pixels.Color(0, 0, 255));     //BLUE
+    pixels.show();
     break;
 
   case COLOR_SILVER:
@@ -163,6 +204,11 @@ void writeColorToPins() {
     digitalWrite(COM_PIN_0, LOW);
     digitalWrite(COM_PIN_1, HIGH);
     digitalWrite(COM_PIN_2, LOW);
+
+    digitalWrite(INTERRUPT_PIN, LOW);
+
+    pixels.setPixelColor(0, pixels.Color(255, 0, 255));     //VIOLET
+    pixels.show();
     break;
 
   case COLOR_BLACK:
@@ -172,7 +218,10 @@ void writeColorToPins() {
     digitalWrite(COM_PIN_2, LOW);
 
   //INTERRUPT
-    interrupt();
+    digitalWrite(INTERRUPT_PIN, HIGH); // Trigger interrupt when black
+
+    pixels.setPixelColor(0, pixels.Color(255, 255, 0));    //YELLOW
+    pixels.show();
     break;
 
   case COLOR_RED:
@@ -180,6 +229,11 @@ void writeColorToPins() {
     digitalWrite(COM_PIN_0, LOW);
     digitalWrite(COM_PIN_1, LOW);
     digitalWrite(COM_PIN_2, HIGH);
+
+    digitalWrite(INTERRUPT_PIN, LOW); 
+
+    pixels.setPixelColor(0, pixels.Color(255, 0, 0));      //RED
+    pixels.show();
     break;
 
   case COLOR_GREEN:
@@ -187,12 +241,22 @@ void writeColorToPins() {
     digitalWrite(COM_PIN_0, HIGH);
     digitalWrite(COM_PIN_1, LOW);
     digitalWrite(COM_PIN_2, HIGH);
+
+    digitalWrite(INTERRUPT_PIN, LOW); 
+
+    pixels.setPixelColor(0, pixels.Color(0, 255, 0));       //GREEN
+    pixels.show();
     break;
   case COLOR_UNKNOWN:
   //6 110
     digitalWrite(COM_PIN_0, LOW);
     digitalWrite(COM_PIN_1, HIGH);
     digitalWrite(COM_PIN_2, HIGH);
+
+    digitalWrite(INTERRUPT_PIN, LOW); 
+
+    pixels.setPixelColor(0, pixels.Color(0, 255, 255));   //TOURQI    
+    pixels.show();
     break;
   
   default:
@@ -200,6 +264,11 @@ void writeColorToPins() {
     digitalWrite(COM_PIN_0, LOW);
     digitalWrite(COM_PIN_1, LOW);
     digitalWrite(COM_PIN_2, LOW);
+
+    digitalWrite(INTERRUPT_PIN, LOW); 
+
+    pixels.setPixelColor(0, pixels.Color(0, 0, 0));         //OFF
+    pixels.show();
     break;
   }
 }
@@ -208,34 +277,34 @@ void writeColorToSerial() {
   switch (current_color)
   {
   case COLOR_WHITE:
-    Serial.printLn("WHITE");
+    Serial.println("WHITE");
     break;
 
   case COLOR_BLUE:
-    Serial.printLn("BLUE");
+    Serial.println("BLUE");
     break;
 
   case COLOR_SILVER:
-    Serial.printLn("SILVER");
+    Serial.println("SILVER");
     break;
 
   case COLOR_BLACK:
-    dSerial.printLn("BLACK");
+    Serial.println("BLACK");
     break;
 
   case COLOR_RED:
-    Serial.printLn("RED");
+    Serial.println("RED");
     break;
 
   case COLOR_GREEN:
-    Serial.printLn("GREEN");
+    Serial.println("GREEN");
     break;
   case COLOR_UNKNOWN:
-    Serial.printLn("UNKNOWN");
+    Serial.println("UNKNOWN");
     break;
   
   default:
-    Serial.printLn("WHITE");
+    Serial.println("WHITE");
     break;
   }
 }
@@ -279,7 +348,7 @@ void getTileColor() {
   else if ((g - r > thresh_color) && (g - b > thresh_color)) {
     current_color = COLOR_GREEN;
   }
-  else if (ir < 250 || c > (g_SILVER_LOW_CLEAR - thresh_clear)) {
+  else if (ir < 72 && c > (g_SILVER_LOW_CLEAR - thresh_clear)) {
     current_color = COLOR_SILVER;
   }
   else if (c > (g_WHITE_LOW_CLEAR - thresh_clear)) {

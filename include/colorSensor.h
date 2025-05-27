@@ -12,13 +12,13 @@
 #include "hardware/structs/sio.h"
 
 //Debug Definitions
-#define RAW_COLOR_DEBUG
-#define COLOR_DEBUG
+//#define RAW_COLOR_DEBUG
+//#define COLOR_DEBUG
 
 // Pin definitions
 #define IR_SENSOR_PIN A0
 
-#define INTERRUPT_PIN D1
+#define INTERRUPT_PIN D7
 
 #define COM_PIN_0 D8
 #define COM_PIN_1 D9
@@ -26,13 +26,8 @@
 
 // Calibration values
 #define g_CALIBRATION_SAMPLES 3
-#define g_CALIBRATION_DELAY 3000
-#define g_BLACK_LOW_CLEAR 1127
-#define g_BLACK_HIGH_CLEAR 1136
-#define g_WHITE_LOW_CLEAR 8929
-#define g_WHITE_HIGH_CLEAR 9351
-#define g_SILVER_LOW_CLEAR 7398
-#define g_SILVER_HIGH_CLEAR 7439
+#define g_CALIBRATION_DELAY 300
+
 
 /*
 typedef enum {

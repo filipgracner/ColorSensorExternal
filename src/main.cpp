@@ -3,12 +3,17 @@
 
 void setup() {
   Serial.begin(115200);
-  while (!Serial);
 
-  Serial.println("init");
+  #ifdef RAW_COLOR_DEBUG
+    while (!Serial);
+  #endif
+
   initColorSensor();
+
+  calibrate();
 }
 
 void loop() {
+  //Serial.println(bootButtonPressed());
   getTileColor();
 }
