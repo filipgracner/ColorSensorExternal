@@ -10,7 +10,7 @@ void setup() {
 
   initColorSensor();
 
-  calibrate();
+  //calibrate();
 }
 
 void loop() {

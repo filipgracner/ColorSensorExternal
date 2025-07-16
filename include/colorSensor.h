@@ -20,8 +20,8 @@
 
 #define INTERRUPT_PIN D7
 
-#define COM_PIN_0 D8
-#define COM_PIN_1 D9
+#define COM_PIN_0 D9
+#define COM_PIN_1 D8
 #define COM_PIN_2 D10
 
 // Calibration values

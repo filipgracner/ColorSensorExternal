@@ -125,12 +125,12 @@ uint32_t calibrateClear() {
   return ((uint32_t)c_high << 16) | c_low;
 }
 
-uint16_t g_BLACK_LOW_CLEAR = 1127;
-uint16_t g_BLACK_HIGH_CLEAR = 1136;
-uint16_t g_WHITE_LOW_CLEAR = 8929;
-uint16_t g_WHITE_HIGH_CLEAR = 9351;
-uint16_t g_SILVER_LOW_CLEAR = 7398;
-uint16_t g_SILVER_HIGH_CLEAR = 7439;
+uint16_t g_BLACK_LOW_CLEAR = 425;
+uint16_t g_BLACK_HIGH_CLEAR = 442;
+uint16_t g_WHITE_LOW_CLEAR = 4557;
+uint16_t g_WHITE_HIGH_CLEAR = 4597;
+uint16_t g_SILVER_LOW_CLEAR = 4753;
+uint16_t g_SILVER_HIGH_CLEAR = 5141;
 
 void calibrate() {
   uint32_t calibrated_clear;
