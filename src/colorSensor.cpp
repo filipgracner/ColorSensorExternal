@@ -187,7 +187,7 @@ void writeColorToPins() {
     pixels.show();
     break;
 
-  case COLOR_BLUE:
+  case COLOR_RED:
   //1 001
     digitalWrite(COM_PIN_0, HIGH);
     digitalWrite(COM_PIN_1, LOW);
@@ -195,7 +195,7 @@ void writeColorToPins() {
 
     digitalWrite(INTERRUPT_PIN, LOW); 
 
-    pixels.setPixelColor(0, pixels.Color(0, 0, 255));     //BLUE
+    pixels.setPixelColor(0, pixels.Color(255, 0, 0));     //RED
     pixels.show();
     break;
 
@@ -224,7 +224,7 @@ void writeColorToPins() {
     pixels.show();
     break;
 
-  case COLOR_RED:
+  case COLOR_BLUE:
   //4 100
     digitalWrite(COM_PIN_0, LOW);
     digitalWrite(COM_PIN_1, LOW);
@@ -232,7 +232,7 @@ void writeColorToPins() {
 
     digitalWrite(INTERRUPT_PIN, LOW); 
 
-    pixels.setPixelColor(0, pixels.Color(255, 0, 0));      //RED
+    pixels.setPixelColor(0, pixels.Color(0, 0, 255));      //BLUE
     pixels.show();
     break;
 
